@@ -295,6 +295,36 @@
         .stat-box.reduced p {
             color: var(--accent);
         }
+
+        .tabs {
+            display: flex;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            width: 100%;
+        }
+
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+        }
+
+        .tab:hover {
+            color: var(--text-main);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .tab.active {
+            color: white;
+            background: var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -305,11 +335,20 @@
             <p class="subtitle">Cualquier PDF a menos de 100KB</p>
         </header>
 
+        <div class="tabs">
+            <div class="tab active" id="tabPdf" onclick="switchMode('pdf')">
+                <i class="fa-solid fa-file-pdf"></i> Comprimir PDF
+            </div>
+            <div class="tab" id="tabImage" onclick="switchMode('image')">
+                <i class="fa-solid fa-image"></i> Imagen a PDF
+            </div>
+        </div>
+
         <div class="drop-zone" id="dropZone">
             <i class="fa-solid fa-cloud-arrow-up"></i>
-            <h3>Arrastra tu PDF o Imagen aquí</h3>
+            <h3 id="dropTitle">Arrastra tu PDF aquí</h3>
             <p style="color: var(--text-muted); margin-top: 0.5rem;">o haz clic para seleccionar</p>
-            <input type="file" id="fileInput" accept="application/pdf,image/*">
+            <input type="file" id="fileInput" accept="application/pdf">
         </div>
 
         <div class="controls" id="controls">
@@ -323,6 +362,10 @@
 
             <h3 style="margin-bottom: 1rem; font-size: 1.1rem;">Nivel de Compresión</h3>
             <div class="settings">
+                <div class="level-card" id="cardNormal" data-level="normal" onclick="setLevel('normal')" style="display: none;">
+                    <h3>Original</h3>
+                    <p>Sin compresión</p>
+                </div>
                 <div class="level-card" data-level="high" onclick="setLevel('high')">
                     <h3>Alta</h3>
                     <p>Buena calidad, menor peso</p>
@@ -394,6 +437,7 @@
         let currentLevel = 'extreme';
         let compressedBlob = null;
         let isImage = false;
+        let currentMode = 'pdf';
 
         const compSettings = {
             'high': { scale: 0.8, quality: 0.5 },
@@ -431,14 +475,46 @@
             else return (bytes / 1048576).toFixed(2) + ' MB';
         }
 
-        function handleFile(file) {
-            if (file.type === 'application/pdf') {
-                isImage = false;
-            } else if (file.type.startsWith('image/')) {
-                isImage = true;
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('tabPdf').classList.remove('active');
+            document.getElementById('tabImage').classList.remove('active');
+            
+            const dropTitle = document.getElementById('dropTitle');
+            const fileInput = document.getElementById('fileInput');
+            const compressBtn = document.getElementById('compressBtn');
+            
+            if (mode === 'pdf') {
+                document.getElementById('tabPdf').classList.add('active');
+                dropTitle.textContent = 'Arrastra tu PDF aquí';
+                fileInput.accept = 'application/pdf';
+                compressBtn.innerHTML = '<i class="fa-solid fa-compress"></i> Comprimir Ahora';
+                document.getElementById('cardNormal').style.display = 'none';
+                if (currentLevel === 'normal') setLevel('extreme');
             } else {
-                alert('Por favor selecciona un archivo PDF o una imagen válida.');
-                return;
+                document.getElementById('tabImage').classList.add('active');
+                dropTitle.textContent = 'Arrastra tu Imagen aquí';
+                fileInput.accept = 'image/*';
+                compressBtn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Convertir a PDF';
+                document.getElementById('cardNormal').style.display = 'block';
+            }
+            
+            resetUI();
+        }
+
+        function handleFile(file) {
+            if (currentMode === 'pdf') {
+                if (file.type !== 'application/pdf') {
+                    alert('Por favor selecciona un archivo PDF válido.');
+                    return;
+                }
+                isImage = false;
+            } else {
+                if (!file.type.startsWith('image/')) {
+                    alert('Por favor selecciona una imagen válida.');
+                    return;
+                }
+                isImage = true;
             }
             
             currentFile = file;
@@ -518,47 +594,70 @@
                         img.onerror = reject;
                     });
 
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    
-                    let drawWidth = img.width;
-                    let drawHeight = img.height;
-                    const maxDimension = 3000;
+                    const originalWidth = img.width;
+                    const originalHeight = img.height;
 
-                    if (drawWidth > maxDimension || drawHeight > maxDimension) {
-                        let ratio = Math.min(maxDimension / drawWidth, maxDimension / drawHeight);
-                        drawWidth *= ratio;
-                        drawHeight *= ratio;
-                    }
-
-                    canvas.width = drawWidth;
-                    canvas.height = drawHeight;
-                    ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
-
-                    let targetBytes = 95000;
-                    if (currentLevel === 'high') {
-                        targetBytes = Math.max(100000, currentFile.size * 0.5);
+                    if (currentLevel === 'normal') {
+                        // Pasar la imagen original sin compresión por canvas
+                        const reader = new FileReader();
+                        const base64data = await new Promise((resolve) => {
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsDataURL(currentFile);
+                        });
+                        
+                        const format = currentFile.type === 'image/png' ? 'PNG' : 'JPEG';
+                        const orientation = originalWidth > originalHeight ? 'l' : 'p';
+                        doc = new jsPDF({
+                            orientation: orientation,
+                            unit: 'px',
+                            format: [originalWidth, originalHeight]
+                        });
+                        
+                        doc.addImage(base64data, format, 0, 0, originalWidth, originalHeight);
                     } else {
-                        if (currentFile.size < 100000) {
-                            targetBytes = currentFile.size * 0.9;
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        let drawWidth = originalWidth;
+                        let drawHeight = originalHeight;
+                        const maxDimension = 3000;
+
+                        if (drawWidth > maxDimension || drawHeight > maxDimension) {
+                            let ratio = Math.min(maxDimension / drawWidth, maxDimension / drawHeight);
+                            drawWidth *= ratio;
+                            drawHeight *= ratio;
                         }
-                    }
 
-                    let imgData;
-                    if (currentLevel === 'extreme') {
-                        imgData = findOptimalImageData(canvas, targetBytes);
-                    } else {
-                        imgData = canvas.toDataURL('image/jpeg', 0.8);
-                    }
+                        canvas.width = drawWidth;
+                        canvas.height = drawHeight;
+                        ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
 
-                    const orientation = drawWidth > drawHeight ? 'l' : 'p';
-                    doc = new jsPDF({
-                        orientation: orientation,
-                        unit: 'px',
-                        format: [drawWidth, drawHeight]
-                    });
+                        let targetBytes = 95000;
+                        if (currentLevel === 'high') {
+                            targetBytes = Math.max(100000, currentFile.size * 0.5);
+                        } else {
+                            if (currentFile.size < 100000) {
+                                targetBytes = currentFile.size * 0.9;
+                            }
+                        }
+
+                        let imgData;
+                        if (currentLevel === 'extreme') {
+                            imgData = findOptimalImageData(canvas, targetBytes);
+                        } else {
+                            imgData = canvas.toDataURL('image/jpeg', 0.8);
+                        }
+
+                        const orientation = drawWidth > drawHeight ? 'l' : 'p';
+                        doc = new jsPDF({
+                            orientation: orientation,
+                            unit: 'px',
+                            format: [drawWidth, drawHeight]
+                        });
+                        
+                        doc.addImage(imgData, 'JPEG', 0, 0, drawWidth, drawHeight);
+                    }
                     
-                    doc.addImage(imgData, 'JPEG', 0, 0, drawWidth, drawHeight);
                     progressFill.style.width = '100%';
                     URL.revokeObjectURL(img.src);
 
@@ -579,9 +678,9 @@
                     let scale = 1.0;
                     if (currentLevel === 'extreme') {
                         scale = Math.min(2.0, Math.max(0.5, 3.0 / Math.sqrt(numPages)));
-                } else {
-                    scale = Math.min(2.0, Math.max(0.8, 4.0 / Math.sqrt(numPages)));
-                }
+                    } else {
+                        scale = Math.min(2.0, Math.max(0.8, 4.0 / Math.sqrt(numPages)));
+                    }
 
                 for (let i = 1; i <= numPages; i++) {
                     progressText.textContent = `Renderizando página ${i} de ${numPages}...`;
@@ -612,7 +711,7 @@
                         const orientation = unscaledViewport.width > unscaledViewport.height ? 'l' : 'p';
                         doc = new jsPDF({
                             orientation: orientation,
-                            unit: 'px',
+                            unit: 'pt',
                             format: [unscaledViewport.width, unscaledViewport.height]
                         });
                     } else {
@@ -661,7 +760,9 @@
                 const url = URL.createObjectURL(compressedBlob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `comprimido_${currentFile.name}`;
+                let outName = currentFile.name;
+                outName = outName.replace(/\.[^/.]+$/, "") + ".pdf";
+                a.download = `comprimido_${outName}`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
