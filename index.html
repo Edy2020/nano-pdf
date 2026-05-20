@@ -307,9 +307,9 @@
 
         <div class="drop-zone" id="dropZone">
             <i class="fa-solid fa-cloud-arrow-up"></i>
-            <h3>Arrastra tu PDF aquí</h3>
+            <h3>Arrastra tu PDF o Imagen aquí</h3>
             <p style="color: var(--text-muted); margin-top: 0.5rem;">o haz clic para seleccionar</p>
-            <input type="file" id="fileInput" accept="application/pdf">
+            <input type="file" id="fileInput" accept="application/pdf,image/*">
         </div>
 
         <div class="controls" id="controls">
@@ -393,6 +393,7 @@
         let currentFile = null;
         let currentLevel = 'extreme';
         let compressedBlob = null;
+        let isImage = false;
 
         const compSettings = {
             'high': { scale: 0.8, quality: 0.5 },
@@ -431,8 +432,12 @@
         }
 
         function handleFile(file) {
-            if (file.type !== 'application/pdf') {
-                alert('Por favor selecciona un archivo PDF válido.');
+            if (file.type === 'application/pdf') {
+                isImage = false;
+            } else if (file.type.startsWith('image/')) {
+                isImage = true;
+            } else {
+                alert('Por favor selecciona un archivo PDF o una imagen válida.');
                 return;
             }
             
@@ -500,24 +505,80 @@
             progressFill.style.width = '0%';
             
             try {
-                const arrayBuffer = await currentFile.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
-                const numPages = pdf.numPages;
-                
                 const { jsPDF } = window.jspdf;
                 let doc = null;
-                let budgetLeft = 95000;
-                if (currentLevel === 'high') {
-                    budgetLeft = Math.max(100000, currentFile.size * 0.5);
-                } else {
-                    if (currentFile.size < 100000) {
-                        budgetLeft = currentFile.size * 0.9;
-                    }
-                }
 
-                let scale = 1.0;
-                if (currentLevel === 'extreme') {
-                    scale = Math.min(2.0, Math.max(0.5, 3.0 / Math.sqrt(numPages)));
+                if (isImage) {
+                    progressText.textContent = 'Procesando imagen...';
+                    const img = new Image();
+                    img.src = URL.createObjectURL(currentFile);
+                    
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
+
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    let drawWidth = img.width;
+                    let drawHeight = img.height;
+                    const maxDimension = 3000;
+
+                    if (drawWidth > maxDimension || drawHeight > maxDimension) {
+                        let ratio = Math.min(maxDimension / drawWidth, maxDimension / drawHeight);
+                        drawWidth *= ratio;
+                        drawHeight *= ratio;
+                    }
+
+                    canvas.width = drawWidth;
+                    canvas.height = drawHeight;
+                    ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
+
+                    let targetBytes = 95000;
+                    if (currentLevel === 'high') {
+                        targetBytes = Math.max(100000, currentFile.size * 0.5);
+                    } else {
+                        if (currentFile.size < 100000) {
+                            targetBytes = currentFile.size * 0.9;
+                        }
+                    }
+
+                    let imgData;
+                    if (currentLevel === 'extreme') {
+                        imgData = findOptimalImageData(canvas, targetBytes);
+                    } else {
+                        imgData = canvas.toDataURL('image/jpeg', 0.8);
+                    }
+
+                    const orientation = drawWidth > drawHeight ? 'l' : 'p';
+                    doc = new jsPDF({
+                        orientation: orientation,
+                        unit: 'px',
+                        format: [drawWidth, drawHeight]
+                    });
+                    
+                    doc.addImage(imgData, 'JPEG', 0, 0, drawWidth, drawHeight);
+                    progressFill.style.width = '100%';
+                    URL.revokeObjectURL(img.src);
+
+                } else {
+                    const arrayBuffer = await currentFile.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                    const numPages = pdf.numPages;
+                    
+                    let budgetLeft = 95000;
+                    if (currentLevel === 'high') {
+                        budgetLeft = Math.max(100000, currentFile.size * 0.5);
+                    } else {
+                        if (currentFile.size < 100000) {
+                            budgetLeft = currentFile.size * 0.9;
+                        }
+                    }
+
+                    let scale = 1.0;
+                    if (currentLevel === 'extreme') {
+                        scale = Math.min(2.0, Math.max(0.5, 3.0 / Math.sqrt(numPages)));
                 } else {
                     scale = Math.min(2.0, Math.max(0.8, 4.0 / Math.sqrt(numPages)));
                 }
@@ -563,6 +624,7 @@
                     
                     progressFill.style.width = `${(i / numPages) * 100}%`;
                 }
+                } // Cierre del else (isImage)
 
                 progressText.textContent = 'Generando nuevo PDF...';
                 compressedBlob = doc.output('blob');
