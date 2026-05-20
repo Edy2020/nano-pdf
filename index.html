@@ -7,8 +7,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <style>
         :root {
             --bg-color: #0f172a;
@@ -291,34 +292,54 @@
             color: var(--accent);
         }
 
-        .tabs {
-            display: flex;
-            background: rgba(0,0,0,0.2);
-            border-radius: 12px;
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 10px;
             margin-bottom: 2rem;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
             width: 100%;
         }
 
-        .tab {
-            flex: 1;
-            text-align: center;
-            padding: 1rem;
+        .tool-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
             cursor: pointer;
-            font-weight: 600;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .tool-btn i {
+            font-size: 1.5rem;
             color: var(--text-muted);
-            transition: all 0.3s ease;
+            transition: color 0.2s ease;
         }
 
-        .tab:hover {
-            color: var(--text-main);
-            background: rgba(255,255,255,0.05);
+        .tool-btn span {
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1.2;
+            color: var(--text-muted);
         }
 
-        .tab.active {
-            color: white;
+        .tool-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .tool-btn.active {
             background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .tool-btn.active i, .tool-btn.active span {
+            color: white;
         }
 
         @media (max-width: 600px) {
@@ -331,16 +352,7 @@
             h1 {
                 font-size: 1.8rem;
             }
-            .tabs {
-                flex-direction: column;
-            }
-            .tab {
-                padding: 0.8rem;
-                border-bottom: 1px solid rgba(255,255,255,0.05);
-            }
-            .tab:last-child {
-                border-bottom: none;
-            }
+
             .file-info {
                 flex-direction: column;
                 align-items: flex-start;
@@ -361,19 +373,37 @@
     </style>
 </head>
 <body>
-
     <div class="container">
         <header>
             <h1><i class="fa-solid fa-file-pdf"></i> Nano Compress PDF</h1>
-            <p class="subtitle">Cualquier PDF a menos de 100KB</p>
+            <p class="subtitle" id="mainSubtitle">Cualquier PDF a menos de 100KB</p>
         </header>
 
-        <div class="tabs">
-            <div class="tab active" id="tabPdf" onclick="switchMode('pdf')">
-                <i class="fa-solid fa-file-pdf"></i> Comprimir PDF
+        <div class="tools-grid">
+            <div class="tool-btn active" id="tool-compress" onclick="switchMode('compress')">
+                <i class="fa-solid fa-compress"></i>
+                <span>Comprimir</span>
             </div>
-            <div class="tab" id="tabImage" onclick="switchMode('image')">
-                <i class="fa-solid fa-image"></i> Imagen a PDF
+            <div class="tool-btn" id="tool-img2pdf" onclick="switchMode('img2pdf')">
+                <i class="fa-solid fa-image"></i>
+                <span>Img a PDF</span>
+            </div>
+            <div class="tool-btn" id="tool-merge" onclick="switchMode('merge')">
+                <i class="fa-solid fa-object-group"></i>
+                <span>Unir</span>
+            </div>
+            <div class="tool-btn" id="tool-split" onclick="switchMode('split')">
+                <i class="fa-solid fa-scissors"></i>
+                <span>Extraer</span>
+            </div>
+            <div class="tool-btn" id="tool-pdf2img" onclick="switchMode('pdf2img')">
+                <i class="fa-solid fa-images"></i>
+                <span>PDF a Img</span>
+            </div>
+
+            <div class="tool-btn" id="tool-watermark" onclick="switchMode('watermark')">
+                <i class="fa-solid fa-stamp"></i>
+                <span>Añadir Marca</span>
             </div>
         </div>
 
@@ -393,7 +423,7 @@
                 <div class="file-size" id="fileSize" style="white-space: nowrap;">0 MB</div>
             </div>
 
-            <h3 style="margin-bottom: 1rem; font-size: 1.1rem;">Nivel de Compresión</h3>
+            <h3 id="settingsTitle" style="margin-bottom: 1rem; font-size: 1.1rem;">Nivel de Compresión</h3>
             <div class="settings">
                 <div class="level-card" id="cardNormal" data-level="normal" onclick="setLevel('normal')" style="display: none;">
                     <h3>Original</h3>
@@ -408,6 +438,17 @@
                     <h3>Extrema</h3>
                     <p>Calidad reducida, mínimo peso</p>
                 </div>
+            </div>
+
+            <div id="splitSettings" style="display: none; margin-bottom: 1.5rem; text-align: left;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Páginas a extraer:</label>
+                <input type="text" id="splitRange" placeholder="Ej: 1, 3, 5-10" style="width: 100%; padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: white; font-family: inherit; font-size: 1rem;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">Deja en blanco para extraer todas o usa comas y guiones.</p>
+            </div>
+
+            <div id="watermarkSettings" style="display: none; margin-bottom: 1.5rem; text-align: left;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Texto de la Marca de Agua:</label>
+                <input type="text" id="watermarkText" placeholder="Ej: CONFIDENCIAL" style="width: 100%; padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: white; font-family: inherit; font-size: 1rem;">
             </div>
 
             <button class="btn" id="compressBtn" onclick="startCompression()">
@@ -467,10 +508,11 @@
         const downloadBtn = document.getElementById('downloadBtn');
 
         let currentFile = null;
+        let currentFiles = [];
         let currentLevel = 'extreme';
         let compressedBlob = null;
         let isImage = false;
-        let currentMode = 'pdf';
+        let currentMode = 'compress';
 
         const compSettings = {
             'high': { scale: 0.8, quality: 0.5 },
@@ -492,13 +534,13 @@
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length) {
-                handleFile(e.dataTransfer.files[0]);
+                handleFiles(e.dataTransfer.files);
             }
         });
 
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length) {
-                handleFile(e.target.files[0]);
+                handleFiles(e.target.files);
             }
         });
 
@@ -510,49 +552,113 @@
 
         function switchMode(mode) {
             currentMode = mode;
-            document.getElementById('tabPdf').classList.remove('active');
-            document.getElementById('tabImage').classList.remove('active');
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tool-' + mode).classList.add('active');
             
             const dropTitle = document.getElementById('dropTitle');
             const fileInput = document.getElementById('fileInput');
             const compressBtn = document.getElementById('compressBtn');
+            const settingsDiv = document.querySelector('.settings');
+            const settingsTitle = document.getElementById('settingsTitle');
+            const splitSettings = document.getElementById('splitSettings');
+            const watermarkSettings = document.getElementById('watermarkSettings');
+            const mainSubtitle = document.getElementById('mainSubtitle');
             
-            if (mode === 'pdf') {
-                document.getElementById('tabPdf').classList.add('active');
+            fileInput.multiple = false;
+            settingsDiv.style.display = 'none';
+            if(settingsTitle) settingsTitle.style.display = 'none';
+            if(splitSettings) splitSettings.style.display = 'none';
+            if(watermarkSettings) watermarkSettings.style.display = 'none';
+            document.getElementById('cardNormal').style.display = 'none';
+            
+            if (mode === 'compress') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Cualquier PDF a menos de 100KB';
                 dropTitle.textContent = 'Arrastra tu PDF aquí';
                 fileInput.accept = 'application/pdf';
                 compressBtn.innerHTML = '<i class="fa-solid fa-compress"></i> Comprimir Ahora';
-                document.getElementById('cardNormal').style.display = 'none';
+                settingsDiv.style.display = 'grid';
+                if(settingsTitle) settingsTitle.style.display = 'block';
                 if (currentLevel === 'normal') setLevel('extreme');
-            } else {
-                document.getElementById('tabImage').classList.add('active');
+            } else if (mode === 'img2pdf') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Convierte tus imágenes a un documento PDF';
                 dropTitle.textContent = 'Arrastra tu Imagen aquí';
                 fileInput.accept = 'image/*';
                 compressBtn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Convertir a PDF';
+                settingsDiv.style.display = 'grid';
+                if(settingsTitle) settingsTitle.style.display = 'block';
                 document.getElementById('cardNormal').style.display = 'block';
+            } else if (mode === 'merge') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Une múltiples archivos PDF en uno solo';
+                dropTitle.textContent = 'Arrastra tus PDFs aquí';
+                fileInput.accept = 'application/pdf';
+                fileInput.multiple = true;
+                compressBtn.innerHTML = '<i class="fa-solid fa-object-group"></i> Unir PDFs';
+                settingsDiv.style.display = 'grid';
+                if(settingsTitle) settingsTitle.style.display = 'block';
+                document.getElementById('cardNormal').style.display = 'block';
+                setLevel('normal');
+            } else if (mode === 'split') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Extrae páginas específicas de tu PDF';
+                dropTitle.textContent = 'Arrastra tu PDF aquí';
+                fileInput.accept = 'application/pdf';
+                compressBtn.innerHTML = '<i class="fa-solid fa-scissors"></i> Extraer Páginas';
+                if(splitSettings) splitSettings.style.display = 'block';
+                settingsDiv.style.display = 'grid';
+                if(settingsTitle) settingsTitle.style.display = 'block';
+                document.getElementById('cardNormal').style.display = 'block';
+                setLevel('normal');
+            } else if (mode === 'pdf2img') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Convierte cada página de tu PDF en imágenes';
+                dropTitle.textContent = 'Arrastra tu PDF aquí';
+                fileInput.accept = 'application/pdf';
+                compressBtn.innerHTML = '<i class="fa-solid fa-images"></i> Extraer Imágenes';
+
+            } else if (mode === 'watermark') {
+                if (mainSubtitle) mainSubtitle.textContent = 'Añade texto personalizado como marca de agua';
+                dropTitle.textContent = 'Arrastra tu PDF aquí';
+                fileInput.accept = 'application/pdf';
+                compressBtn.innerHTML = '<i class="fa-solid fa-stamp"></i> Añadir Marca';
+                if(watermarkSettings) watermarkSettings.style.display = 'block';
+                settingsDiv.style.display = 'grid';
+                if(settingsTitle) settingsTitle.style.display = 'block';
+                document.getElementById('cardNormal').style.display = 'block';
+                setLevel('normal');
             }
             
             resetUI();
         }
 
-        function handleFile(file) {
-            if (currentMode === 'pdf') {
-                if (file.type !== 'application/pdf') {
-                    alert('Por favor selecciona un archivo PDF válido.');
+        function handleFiles(files) {
+            let filesArr = Array.from(files);
+            if (currentMode === 'merge') {
+                currentFiles = filesArr.filter(f => f.type === 'application/pdf');
+                if (currentFiles.length < 2) {
+                    alert('Para unir PDFs, selecciona al menos 2 archivos PDF.');
+                    currentFiles = [];
                     return;
                 }
-                isImage = false;
+                fileNameEl.textContent = `${currentFiles.length} archivos seleccionados`;
+                let totalSize = currentFiles.reduce((acc, f) => acc + f.size, 0);
+                fileSizeEl.textContent = formatSize(totalSize);
             } else {
-                if (!file.type.startsWith('image/')) {
-                    alert('Por favor selecciona una imagen válida.');
-                    return;
+                let file = filesArr[0];
+                if (currentMode === 'img2pdf') {
+                    if (!file.type.startsWith('image/')) {
+                        alert('Por favor selecciona una imagen válida.');
+                        return;
+                    }
+                    isImage = true;
+                } else {
+                    if (file.type !== 'application/pdf') {
+                        alert('Por favor selecciona un archivo PDF válido.');
+                        return;
+                    }
+                    isImage = false;
                 }
-                isImage = true;
+                currentFile = file;
+                fileNameEl.textContent = file.name;
+                fileSizeEl.textContent = formatSize(file.size);
             }
-            
-            currentFile = file;
-            fileNameEl.textContent = file.name;
-            fileSizeEl.textContent = formatSize(file.size);
             
             dropZone.style.display = 'none';
             controls.style.display = 'block';
@@ -569,6 +675,7 @@
 
         function resetUI() {
             currentFile = null;
+            currentFiles = [];
             compressedBlob = null;
             fileInput.value = '';
             
@@ -606,7 +713,11 @@
         }
 
         async function startCompression() {
-            if (!currentFile) return;
+            if (currentMode === 'merge') {
+                if (currentFiles.length < 2) return;
+            } else {
+                if (!currentFile) return;
+            }
 
             compressBtn.disabled = true;
             controls.style.opacity = '0.5';
@@ -614,6 +725,156 @@
             progressFill.style.width = '0%';
             
             try {
+                if (currentMode === 'merge') {
+                    progressText.textContent = 'Uniendo PDFs...';
+                    const { PDFDocument } = window.PDFLib;
+                    const mergedPdf = await PDFDocument.create();
+
+                    for (let i = 0; i < currentFiles.length; i++) {
+                        progressText.textContent = `Procesando archivo ${i + 1} de ${currentFiles.length}...`;
+                        const fileBuffer = await currentFiles[i].arrayBuffer();
+                        const pdf = await PDFDocument.load(fileBuffer);
+                        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                        copiedPages.forEach((page) => mergedPdf.addPage(page));
+                        progressFill.style.width = `${((i + 1) / currentFiles.length) * 100}%`;
+                    }
+                    
+                    progressText.textContent = 'Generando nuevo PDF...';
+                    const mergedPdfBytes = await mergedPdf.save();
+                    if (currentLevel === 'normal') {
+                        compressedBlob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                        let originalSize = currentFiles.reduce((acc, f) => acc + f.size, 0);
+                        showResults(originalSize, compressedBlob.size, true);
+                        return;
+                    } else {
+                        currentFile = new File([mergedPdfBytes], "pdfs_unidos.pdf", { type: 'application/pdf' });
+                        isImage = false;
+                    }
+                } else if (currentMode === 'split') {
+                    progressText.textContent = 'Extrayendo páginas...';
+                    const { PDFDocument } = window.PDFLib;
+                    const fileBuffer = await currentFile.arrayBuffer();
+                    const pdf = await PDFDocument.load(fileBuffer);
+                    const totalPages = pdf.getPageCount();
+                    
+                    const rangeStr = document.getElementById('splitRange').value.trim();
+                    let pagesToKeep = [];
+                    if (!rangeStr) {
+                        for (let i = 0; i < totalPages; i++) pagesToKeep.push(i);
+                    } else {
+                        const parts = rangeStr.split(',');
+                        for (let part of parts) {
+                            if (part.includes('-')) {
+                                let [start, end] = part.split('-').map(n => parseInt(n.trim()));
+                                if (!isNaN(start) && !isNaN(end)) {
+                                    start = Math.max(1, start);
+                                    end = Math.min(totalPages, end);
+                                    if (start <= end) {
+                                        for (let i = start; i <= end; i++) pagesToKeep.push(i - 1);
+                                    }
+                                }
+                            } else {
+                                let num = parseInt(part.trim());
+                                if (!isNaN(num) && num >= 1 && num <= totalPages) {
+                                    pagesToKeep.push(num - 1);
+                                }
+                            }
+                        }
+                    }
+
+                    pagesToKeep = [...new Set(pagesToKeep)].sort((a,b) => a-b);
+                    if (pagesToKeep.length === 0) {
+                        alert("El rango de páginas no es válido.");
+                        resetUI();
+                        return;
+                    }
+
+                    progressText.textContent = 'Generando nuevo PDF...';
+                    const splitPdf = await PDFDocument.create();
+                    const copiedPages = await splitPdf.copyPages(pdf, pagesToKeep);
+                    copiedPages.forEach((page) => splitPdf.addPage(page));
+
+                    const splitBytes = await splitPdf.save();
+                    if (currentLevel === 'normal') {
+                        compressedBlob = new Blob([splitBytes], { type: 'application/pdf' });
+                        showResults(currentFile.size, compressedBlob.size, true);
+                        return;
+                    } else {
+                        currentFile = new File([splitBytes], currentFile.name, { type: 'application/pdf' });
+                        isImage = false;
+                    }
+                } else if (currentMode === 'pdf2img') {
+                    progressText.textContent = 'Extrayendo imágenes...';
+                    const arrayBuffer = await currentFile.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                    const numPages = pdf.numPages;
+                    
+                    const zip = new JSZip();
+                    
+                    for (let i = 1; i <= numPages; i++) {
+                        progressText.textContent = `Procesando página ${i} de ${numPages}...`;
+                        const page = await pdf.getPage(i);
+                        const viewport = page.getViewport({scale: 2.0});
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        
+                        await page.render({
+                            canvasContext: ctx,
+                            viewport: viewport,
+                            intent: 'print'
+                        }).promise;
+                        
+                        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                        zip.file(`pagina_${i}.jpg`, blob);
+                        
+                        progressFill.style.width = `${(i / numPages) * 100}%`;
+                    }
+                    
+                    progressText.textContent = 'Generando archivo ZIP...';
+                    compressedBlob = await zip.generateAsync({type: "blob"});
+                    
+                    showResults(currentFile.size, compressedBlob.size, true);
+                    return;
+                } else if (currentMode === 'watermark') {
+                    progressText.textContent = 'Añadiendo marca de agua...';
+                    const { PDFDocument, rgb, degrees } = window.PDFLib;
+                    const fileBuffer = await currentFile.arrayBuffer();
+                    const pdf = await PDFDocument.load(fileBuffer);
+                    
+                    const wmText = document.getElementById('watermarkText').value || 'CONFIDENCIAL';
+                    const pages = pdf.getPages();
+                    
+                    for (let i = 0; i < pages.length; i++) {
+                        const page = pages[i];
+                        const { width, height } = page.getSize();
+                        page.drawText(wmText, {
+                            x: width / 2 - (wmText.length * 15),
+                            y: height / 2,
+                            size: 60,
+                            color: rgb(0.8, 0.2, 0.2),
+                            rotate: degrees(-45),
+                            opacity: 0.3,
+                        });
+                        progressFill.style.width = `${((i + 1) / pages.length) * 100}%`;
+                    }
+                    
+                    progressText.textContent = 'Generando nuevo PDF...';
+                    const wmBytes = await pdf.save();
+                    if (currentLevel === 'normal') {
+                        compressedBlob = new Blob([wmBytes], { type: 'application/pdf' });
+                        showResults(currentFile.size, compressedBlob.size, true);
+                        return;
+                    } else {
+                        currentFile = new File([wmBytes], currentFile.name, { type: 'application/pdf' });
+                        isImage = false;
+                    }
+                }
+
                 const { jsPDF } = window.jspdf;
                 let doc = null;
 
@@ -631,7 +892,6 @@
                     const originalHeight = img.height;
 
                     if (currentLevel === 'normal') {
-                        // Pasar la imagen original sin compresión por canvas
                         const reader = new FileReader();
                         const base64data = await new Promise((resolve) => {
                             reader.onload = (e) => resolve(e.target.result);
@@ -776,7 +1036,7 @@
             }
         }
 
-        function showResults(originalSize, newSize) {
+        function showResults(originalSize, newSize, hideReduction = false) {
             controls.style.display = 'none';
             progressContainer.style.display = 'none';
             resultContainer.style.display = 'block';
@@ -784,22 +1044,39 @@
             document.getElementById('statOriginal').textContent = formatSize(originalSize);
             document.getElementById('statCompressed').textContent = formatSize(newSize);
             
-            const reduction = ((originalSize - newSize) / originalSize) * 100;
-            if (reduction < 0) {
-                document.getElementById('statReduction').textContent = "0%";
-                document.getElementById('statReduction').style.color = "#ef4444";
+            if (hideReduction) {
+                document.getElementById('statReduction').textContent = "-";
+                document.getElementById('statReduction').style.color = "var(--text-muted)";
             } else {
-                document.getElementById('statReduction').textContent = reduction.toFixed(1) + '%';
-                document.getElementById('statReduction').style.color = "var(--accent)";
+                const reduction = ((originalSize - newSize) / originalSize) * 100;
+                if (reduction < 0) {
+                    document.getElementById('statReduction').textContent = "0%";
+                    document.getElementById('statReduction').style.color = "#ef4444";
+                } else {
+                    document.getElementById('statReduction').textContent = reduction.toFixed(1) + '%';
+                    document.getElementById('statReduction').style.color = "var(--accent)";
+                }
             }
 
             downloadBtn.onclick = () => {
                 const url = URL.createObjectURL(compressedBlob);
                 const a = document.createElement('a');
                 a.href = url;
-                let outName = currentFile.name;
-                outName = outName.replace(/\.[^/.]+$/, "") + ".pdf";
-                a.download = `comprimido_${outName}`;
+                let outName = "documento.pdf";
+                const isCompressed = currentLevel !== 'normal';
+                if (currentMode === 'merge') {
+                    outName = isCompressed ? "pdfs_unidos_comprimido.pdf" : "pdfs_unidos.pdf";
+                } else if (currentMode === 'split') {
+                    outName = currentFile.name.replace(/\.[^/.]+$/, "") + (isCompressed ? "_extraido_comprimido.pdf" : "_extraido.pdf");
+                } else if (currentMode === 'pdf2img') {
+                    outName = currentFile.name.replace(/\.[^/.]+$/, "") + "_imagenes.zip";
+                } else if (currentMode === 'watermark') {
+                    outName = currentFile.name.replace(/\.[^/.]+$/, "") + (isCompressed ? "_marcado_comprimido.pdf" : "_marcado.pdf");
+                } else if (currentFile) {
+                    outName = currentFile.name.replace(/\.[^/.]+$/, "") + ".pdf";
+                    outName = isCompressed ? `comprimido_${outName}` : outName;
+                }
+                a.download = outName;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
